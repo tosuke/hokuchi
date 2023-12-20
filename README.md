@@ -1,0 +1,2 @@
+# hokuchi
+simple netboot server

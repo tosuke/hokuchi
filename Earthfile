@@ -1,5 +1,17 @@
 VERSION 0.7
 
+hokuchi:
+    FROM --platform=$BUILDPLATFORM golang:1.21
+    ARG TARGETOS
+    ARG TARGETARCH
+    WORKDIR /work
+    COPY go.mod go.mod
+    COPY go.sum go.sum
+    RUN go mod download
+    COPY . .
+    RUN CGO_ENABLED=0 GOOS=${TARGETOS} GOARCH=${TARGETARCH} go build ./cmd/hokuchi
+    SAVE ARTIFACT ./hokuchi AS LOCAL ./hokuchi
+
 ipxe-builder:
     FROM ubuntu:22.04
     RUN \

@@ -11,14 +11,14 @@ type Key struct {
 	version string
 }
 
-func isChannelValid(channel string) bool {
+func isValidChannel(channel string) bool {
 	switch channel {
 	case "stable", "beta", "alpha":
 		return true
 	}
 	return false
 }
-func isArchValid(arch string) bool {
+func isValidArch(arch string) bool {
 	switch arch {
 	case "amd64", "arm64":
 		return true
@@ -28,7 +28,7 @@ func isArchValid(arch string) bool {
 
 var versionRegex = regexp.MustCompile("^\\d+\\.\\d+\\.\\d+$")
 
-func isVersionValid(version string) bool {
+func isValidVersion(version string) bool {
 	return versionRegex.MatchString(version)
 }
 
@@ -39,5 +39,5 @@ func (k Key) baseURL() string {
 	return fmt.Sprintf("https://%s.release.flatcar-linux.net/%s-usr/%s", k.channel, k.arch, k.version)
 }
 func (k Key) valid() bool {
-	return isChannelValid(k.channel) && isArchValid(k.arch) && isVersionValid(k.version)
+	return isValidChannel(k.channel) && isValidArch(k.arch) && isValidVersion(k.version)
 }

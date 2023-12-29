@@ -19,9 +19,6 @@ import (
 type Fetcher struct {
 	http *http.Client
 	sema chan struct{}
-
-	// cached
-	_signKeyring *crypto.KeyRing
 }
 type Option struct {
 	RequestConcurrency int
@@ -94,10 +91,6 @@ func (f *Fetcher) fetchVersion(ctx context.Context, key Key) (string, error) {
 	message := crypto.NewPlainMessage(versionBuf.Bytes())
 	signature := crypto.NewPGPSignature(versionSigBuf.Bytes())
 
-	signKeyring, err := f.getSignKeyring()
-	if err != nil {
-		return "", errtrace.Wrap(err)
-	}
 	if err := signKeyring.VerifyDetached(message, signature, crypto.GetUnixTime()); err != nil {
 		return "", errtrace.Wrap(err)
 	}
@@ -126,10 +119,6 @@ func (f *Fetcher) fetchKernel(ctx context.Context, w io.Writer, key Key) error {
 		return nil
 	})
 	eg.Go(func() error {
-		signKeyring, err := f.getSignKeyring()
-		if err != nil {
-			return errtrace.Wrap(err)
-		}
 
 		var kernelSigBuf bytes.Buffer
 		if err := f.fetchData(ctx, &kernelSigBuf, key, "/flatcar_production_pxe.vmlinuz.sig", 2048); err != nil {
@@ -192,20 +181,16 @@ func (f *Fetcher) fetchData(ctx context.Context, w io.Writer, key Key, subpath s
 //go:embed Flatcar_Image_Signing_key.asc
 var flatcarGPGKey string
 
-func (f *Fetcher) getSignKeyring() (*crypto.KeyRing, error) {
-	if f._signKeyring != nil {
-		return f._signKeyring, nil
-	}
+var signKeyring *crypto.KeyRing = mustKeyringFromArmored(flatcarGPGKey)
 
-	pubKeyObj, err := crypto.NewKeyFromArmored(flatcarGPGKey)
+func mustKeyringFromArmored(pubKey string) *crypto.KeyRing {
+	pubKeyObj, err := crypto.NewKeyFromArmored(pubKey)
 	if err != nil {
-		return nil, errtrace.Wrap(err)
+		panic(err)
 	}
-	signKeyring, err := crypto.NewKeyRing(pubKeyObj)
+	keyring, err := crypto.NewKeyRing(pubKeyObj)
 	if err != nil {
-		return nil, errtrace.Wrap(err)
+		panic(err)
 	}
-
-	f._signKeyring = signKeyring
-	return signKeyring, nil
+	return keyring
 }

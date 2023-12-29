@@ -1,7 +1,16 @@
 package slogerr
 
-import "log/slog"
+import (
+	"log/slog"
+	"strings"
+
+	"braces.dev/errtrace"
+)
 
 func Err(err error) slog.Attr {
-	return slog.String("err", err.Error())
+	msg := err.Error()
+	trace := errtrace.FormatString(err)
+	trace = strings.TrimPrefix(trace, msg)
+	trace = strings.TrimSpace(trace)
+	return slog.Group("err", slog.String("msg", msg), slog.String("trace", trace))
 }

@@ -3,12 +3,12 @@ package storage
 import (
 	"context"
 	"errors"
-	"fmt"
 	"io"
 	"io/fs"
 	"os"
 	"path/filepath"
 
+	"braces.dev/errtrace"
 	"github.com/tosuke/hokuchi/syncmap"
 )
 
@@ -38,14 +38,14 @@ func (s *fsStorage) Get(ctx context.Context, key string) (int64, io.ReadCloser, 
 	file, err := os.Open(path)
 	if err != nil {
 		if errors.Is(err, &fs.PathError{}) || errors.Is(err, fs.ErrNotExist) {
-			return 0, nil, ErrNotfound
+			return 0, nil, errtrace.Wrap(ErrNotfound)
 		}
-		return 0, nil, fmt.Errorf("failed to open storage data file: %w", err)
+		return 0, nil, errtrace.Wrap(err)
 	}
 
 	stat, err := file.Stat()
 	if err != nil {
-		return 0, nil, fmt.Errorf("failed to get stat for data file: %w", err)
+		return 0, nil, errtrace.Wrap(err)
 	}
 	size := stat.Size()
 
@@ -54,23 +54,23 @@ func (s *fsStorage) Get(ctx context.Context, key string) (int64, io.ReadCloser, 
 
 func (s *fsStorage) Add(ctx context.Context, key string) (TxWriter, error) {
 	if _, err := os.Stat(s.pathForKey(key)); err == nil {
-		return nil, ErrExists
+		return nil, errtrace.Wrap(ErrExists)
 	}
 
 	temp, err := os.CreateTemp(s.tempDir, "hokuchi-*")
 	if err != nil {
-		return nil, fmt.Errorf("failed to create temp file for tx: %w", err)
+		return nil, errtrace.Wrap(err)
 	}
 	tx := &fsTx{
-		s: s,
-		key: key,
+		s:        s,
+		key:      key,
 		tempFile: temp,
 	}
 
 	if _, loaded := s.running.LoadOrStore(key, tx); loaded {
 		temp.Close()
 		os.Remove(temp.Name())
-		return nil, ErrExists
+		return nil, errtrace.Wrap(ErrExists)
 	}
 
 	return tx, nil
@@ -91,7 +91,7 @@ func (s *fsStorage) Close() error {
 	}
 
 	if len(errs) > 0 {
-		return errors.Join(errs...)
+		return errtrace.Wrap(errors.Join(errs...))
 	}
 	return nil
 }
@@ -110,7 +110,7 @@ func (s *fsStorage) rollback(tx *fsTx) error {
 
 	path := tx.tempFile.Name()
 	if err := os.Remove(path); err != nil && !errors.Is(err, &fs.PathError{}) {
-		return fmt.Errorf("faield to remove tmpfile: %w", err)
+		return errtrace.Wrap(err)
 	}
 	return nil
 }
@@ -124,12 +124,12 @@ func (s *fsStorage) commit(tx *fsTx) error {
 	desiredPath := s.pathForKey(tx.key)
 
 	if err := tx.tempFile.Sync(); err != nil {
-		return fmt.Errorf("failed to sync tmpfile: %w", err)
+		return errtrace.Wrap(err)
 	}
 	tx.tempFile.Close()
 
 	if err := os.Rename(tmpPath, desiredPath); err != nil {
-		return fmt.Errorf("failed to move file: %w", err)
+		return errtrace.Wrap(err)
 	}
 	return nil
 }

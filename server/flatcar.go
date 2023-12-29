@@ -2,6 +2,7 @@ package server
 
 import (
 	"bytes"
+	"errors"
 	"io"
 	"log/slog"
 	"net/http"
@@ -33,8 +34,8 @@ func (s *Server) HandleFlatcarKernel(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Length", strconv.FormatInt(size, 10))
 		io.Copy(w, reader)
 		return
-	} else if err != storage.ErrNotfound {
-		slog.ErrorContext(ctx, "failed to get kernel from storage: %w", slogerr.Err(err))
+	} else if !errors.Is(err, storage.ErrNotfound) {
+		slog.ErrorContext(ctx, "Error getting kernel from storage", slogerr.Err(err))
 		w.WriteHeader(http.StatusInternalServerError)
 		return
 	}

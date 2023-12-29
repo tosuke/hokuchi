@@ -11,6 +11,7 @@ import (
 	"os/signal"
 	"time"
 
+	"braces.dev/errtrace"
 	"github.com/tosuke/hokuchi/flatcar"
 	"github.com/tosuke/hokuchi/server"
 	"github.com/tosuke/hokuchi/slogerr"
@@ -66,14 +67,14 @@ func run(args []string) int {
 	defer hs.Close()
 	go func() {
 		if err := hs.ListenAndServe(); !errors.Is(err, http.ErrServerClosed) {
-			cancel(fmt.Errorf("failed to start server: %w", err))
+			cancel(errtrace.Wrap(err))
 		}
 		cancel(nil)
 	}()
 
 	<-ctx.Done()
 	if err := context.Cause(ctx); err != nil && err != context.Canceled {
-		slog.Error("failed to start", slogerr.Err(err))
+		slog.Error("Error starting", slogerr.Err(err))
 		return 1
 	}
 

@@ -5,13 +5,12 @@ import (
 	"bytes"
 	"context"
 	_ "embed"
-	"errors"
-	"fmt"
 	"io"
 	"log/slog"
 	"net/http"
 	"strings"
 
+	"braces.dev/errtrace"
 	"github.com/ProtonMail/gopenpgp/v2/crypto"
 	"github.com/tosuke/hokuchi"
 	"golang.org/x/sync/errgroup"
@@ -47,21 +46,21 @@ func (f *Fetcher) ResolveKey(ctx context.Context, channel, arch, version string)
 		version: version,
 	}
 
-	if !isChannelValid(k.channel) {
-		return Key{}, errors.New("invalid channel")
+	if !isValidChannel(k.channel) {
+		return Key{}, errtrace.New("invalid channel")
 	}
-	if !isArchValid(k.arch) {
-		return Key{}, errors.New("invalid arch")
+	if !isValidArch(k.arch) {
+		return Key{}, errtrace.New("invalid arch")
 	}
 	if k.version == "current" {
 		currentVer, err := f.fetchVersion(ctx, k)
 		if err != nil {
-			return Key{}, fmt.Errorf("failed to fetch current version: %w", err)
+			return Key{}, errtrace.Wrap(err)
 		}
 		k.version = currentVer
 	}
-	if !isVersionValid(k.version) {
-		return Key{}, errors.New("invalid version")
+	if !isValidVersion(k.version) {
+		return Key{}, errtrace.New("invalid version")
 	}
 
 	return k, nil
@@ -78,18 +77,18 @@ func (f *Fetcher) fetchVersion(ctx context.Context, key Key) (string, error) {
 	eg, egctx := errgroup.WithContext(ctx)
 	eg.Go(func() error {
 		if err := f.fetchData(egctx, &versionBuf, key, "/version.txt", 2048); err != nil {
-			return fmt.Errorf("failed to fetch version data: %w", err)
+			return errtrace.Wrap(err)
 		}
 		return nil
 	})
 	eg.Go(func() error {
 		if err := f.fetchData(egctx, &versionSigBuf, key, "/version.txt.sig", 2048); err != nil {
-			return fmt.Errorf("failed to fetch version signature: %w", err)
+			return errtrace.Wrap(err)
 		}
 		return nil
 	})
 	if err := eg.Wait(); err != nil {
-		return "", err
+		return "", errtrace.Wrap(err)
 	}
 
 	message := crypto.NewPlainMessage(versionBuf.Bytes())
@@ -97,10 +96,10 @@ func (f *Fetcher) fetchVersion(ctx context.Context, key Key) (string, error) {
 
 	signKeyring, err := f.getSignKeyring()
 	if err != nil {
-		return "", fmt.Errorf("failed to get flatcar sign keyring: %w", err)
+		return "", errtrace.Wrap(err)
 	}
 	if err := signKeyring.VerifyDetached(message, signature, crypto.GetUnixTime()); err != nil {
-		return "", fmt.Errorf("failed to verify flatcar version: %w", err)
+		return "", errtrace.Wrap(err)
 	}
 
 	sc := bufio.NewScanner(&versionBuf)
@@ -111,7 +110,7 @@ func (f *Fetcher) fetchVersion(ctx context.Context, key Key) (string, error) {
 			return version, nil
 		}
 	}
-	return "", fmt.Errorf("failed to find version")
+	return "", errtrace.New("failed to find version")
 }
 
 func (f *Fetcher) fetchKernel(ctx context.Context, w io.Writer, key Key) error {
@@ -122,30 +121,30 @@ func (f *Fetcher) fetchKernel(ctx context.Context, w io.Writer, key Key) error {
 		writer := io.MultiWriter(w, pw)
 		defer pw.Close()
 		if err := f.fetchData(ectx, writer, key, "/flatcar_production_pxe.vmlinuz", 0); err != nil {
-			return fmt.Errorf("failed to fetch kernel: %w", err)
+			return errtrace.Wrap(err)
 		}
 		return nil
 	})
 	eg.Go(func() error {
 		signKeyring, err := f.getSignKeyring()
 		if err != nil {
-			return fmt.Errorf("failed to get flatcar sign keying: %w", err)
+			return errtrace.Wrap(err)
 		}
 
 		var kernelSigBuf bytes.Buffer
 		if err := f.fetchData(ctx, &kernelSigBuf, key, "/flatcar_production_pxe.vmlinuz.sig", 2048); err != nil {
-			return fmt.Errorf("failed to fetch kernel signature: %w", err)
+			return errtrace.Wrap(err)
 		}
 		signature := crypto.NewPGPSignature(kernelSigBuf.Bytes())
 
 		if err := signKeyring.VerifyDetachedStream(pr, signature, crypto.GetUnixTime()); err != nil {
-			return fmt.Errorf("failed to verify kernel: %w", err)
+			return errtrace.Wrap(err)
 		}
 		return nil
 	})
 
 	if err := eg.Wait(); err != nil {
-		return err
+		return errtrace.Wrap(err)
 	}
 
 	return nil
@@ -155,7 +154,7 @@ func (f *Fetcher) fetchData(ctx context.Context, w io.Writer, key Key, subpath s
 	url := key.baseURL() + subpath
 	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
 	if err != nil {
-		return fmt.Errorf("failed to create request for flatcar repository: %w", err)
+		return errtrace.Wrap(err)
 	}
 
 	if f.sema != nil {
@@ -168,7 +167,7 @@ func (f *Fetcher) fetchData(ctx context.Context, w io.Writer, key Key, subpath s
 	slog.DebugContext(ctx, "request", slog.String("url", url))
 	resp, err := f.http.Do(req)
 	if err != nil {
-		return fmt.Errorf("failed to request flatcar data: %w", err)
+		return errtrace.Wrap(err)
 	}
 	defer func() {
 		io.Copy(io.Discard, resp.Body)
@@ -177,7 +176,7 @@ func (f *Fetcher) fetchData(ctx context.Context, w io.Writer, key Key, subpath s
 
 	slog.DebugContext(ctx, "processing response", slog.String("url", url))
 	if resp.StatusCode != http.StatusOK {
-		return fmt.Errorf("invalid status from flatcar: %d %s", resp.StatusCode, http.StatusText(resp.StatusCode))
+		return errtrace.Errorf("invalid status from flatcar: %d %s", resp.StatusCode, http.StatusText(resp.StatusCode))
 	}
 
 	var r io.Reader = resp.Body
@@ -185,7 +184,7 @@ func (f *Fetcher) fetchData(ctx context.Context, w io.Writer, key Key, subpath s
 		r = io.LimitReader(r, limit)
 	}
 	if _, err := io.Copy(w, r); err != nil {
-		return fmt.Errorf("failed to copy flatcar response: %w", err)
+		return errtrace.Wrap(err)
 	}
 	return nil
 }
@@ -200,11 +199,11 @@ func (f *Fetcher) getSignKeyring() (*crypto.KeyRing, error) {
 
 	pubKeyObj, err := crypto.NewKeyFromArmored(flatcarGPGKey)
 	if err != nil {
-		return nil, fmt.Errorf("failed to parse flatcar key: %w", err)
+		return nil, errtrace.Wrap(err)
 	}
 	signKeyring, err := crypto.NewKeyRing(pubKeyObj)
 	if err != nil {
-		return nil, fmt.Errorf("failed to create flatcar keyring: %w", err)
+		return nil, errtrace.Wrap(err)
 	}
 
 	f._signKeyring = signKeyring

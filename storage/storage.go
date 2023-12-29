@@ -2,8 +2,9 @@ package storage
 
 import (
 	"context"
-	"errors"
 	"io"
+
+	"braces.dev/errtrace"
 )
 
 type TxWriter interface {
@@ -20,6 +21,6 @@ type Storage interface {
 }
 
 var (
-	ErrNotfound = errors.New("storage: not found")
-	ErrExists   = errors.New("storage: already exists")
+	ErrNotfound = errtrace.New("storage: not found")
+	ErrExists   = errtrace.New("storage: already exists")
 )

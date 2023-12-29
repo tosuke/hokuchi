@@ -8,6 +8,7 @@ import (
 	"text/template"
 
 	"github.com/tosuke/hokuchi"
+	"github.com/tosuke/hokuchi/slogerr"
 )
 
 const bootstrapIpxe = `#!ipxe
@@ -54,12 +55,12 @@ func (s *Server) HandleIPXE(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "text/plain")
 	var buf bytes.Buffer
 	if err := ipxeTemplate.Execute(&buf, dummyProfile.BootConfig); err != nil {
-		slog.ErrorContext(ctx, "failed to render template", slog.Any("error", err))
+		slog.ErrorContext(ctx, "Error rendering template", slogerr.Err(err))
 		renderIPXEError(w, http.StatusInternalServerError, "")
 		return
 	}
 	if _, err := buf.WriteTo(w); err != nil {
-		slog.ErrorContext(ctx, "failed to write response", slog.Any("error", err))
+		slog.ErrorContext(ctx, "Error writing response", slogerr.Err(err))
 		renderIPXEError(w, http.StatusInternalServerError, "")
 		return
 	}

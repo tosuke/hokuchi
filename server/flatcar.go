@@ -42,7 +42,7 @@ func (s *Server) HandleFlatcarKernel(w http.ResponseWriter, r *http.Request) {
 
 	tx, err := s.Storage.Add(ctx, key.String())
 	if err != nil {
-		slog.ErrorContext(ctx, "failed to create tx for kernel: %w", slogerr.Err(err))
+		slog.ErrorContext(ctx, "Error creating kernel writer", slogerr.Err(err))
 		w.WriteHeader(http.StatusInternalServerError)
 		return
 	}

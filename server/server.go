@@ -1,7 +1,6 @@
 package server
 
 import (
-	"fmt"
 	"log/slog"
 	"net/http"
 	"time"
@@ -10,7 +9,6 @@ import (
 	"github.com/go-chi/chi/v5/middleware"
 	slogchi "github.com/samber/slog-chi"
 	"github.com/tosuke/hokuchi/flatcar"
-	"github.com/tosuke/hokuchi/slogerr"
 	"github.com/tosuke/hokuchi/storage"
 )
 
@@ -40,22 +38,11 @@ func (s *Server) HTTPHandler() http.Handler {
 	r.HandleFunc("/boot_{arch}.efi", s.HandleBootbin)
 	r.Get("/boot.ipxe", s.HandleBootstrapIPXE)
 	r.Get("/ipxe", s.HandleIPXE)
+	// r.Get("/profile/{pid}/flatcar/kernel")
+	// r.Get("/profile/{pid}/flatcar/initrd")
+	// r.Get("/profile/{pid}/ignition")
+	// TODO やめる
 	r.Get("/flatcar/{channel}/{arch}/{version}/kernel", s.HandleFlatcarKernel)
-	r.Get("/flatcar/{channel}/{arch}/{version}/version", func(w http.ResponseWriter, r *http.Request) {
-		ctx := r.Context()
-		channel := chi.URLParam(r, "channel")
-		arch := chi.URLParam(r, "arch")
-		version := chi.URLParam(r, "version")
-
-		key, err := s.Flatcar.ResolveKey(ctx, channel, arch, version)
-		if err != nil {
-			slog.ErrorContext(ctx, "resolve key", slogerr.Err(err))
-			return
-		}
-
-		fmt.Fprintf(w, "%s", key.String())
-
-	})
 
 	return r
 }

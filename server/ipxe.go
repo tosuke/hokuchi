@@ -4,15 +4,18 @@ import (
 	"bytes"
 	"fmt"
 	"log/slog"
+	"math"
+	"math/rand"
 	"net/http"
+	"strconv"
 	"text/template"
 
-	"github.com/tosuke/hokuchi"
+	"braces.dev/errtrace"
 	"github.com/tosuke/hokuchi/slogerr"
 )
 
 const bootstrapIpxe = `#!ipxe
-chain ipxe?uuid=${uuid}&mac=${mac:hexhyp}&domain=${domain}&hostname=${hostname}&serial=${serial}&arch=${buildarch:uristring}
+chain --replace ipxe?uuid=${uuid}&mac=${mac:hexhyp}&domain=${domain}&hostname=${hostname}&serial=${serial}&arch=${buildarch:uristring}
 `
 
 var ipxeTemplate = template.Must(template.New("ipxe").Parse(`#!ipxe
@@ -27,50 +30,67 @@ func (s *Server) HandleBootstrapIPXE(w http.ResponseWriter, r *http.Request) {
 	w.Write([]byte(bootstrapIpxe))
 }
 
+const backoffBase = 10_000
+const backoffCap = 600_000
+
 func (s *Server) HandleIPXE(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
-	dummyProfile := &hokuchi.Profile{
-		ID:     "dummy",
-		Arch:   "arm64",
-		Labels: nil,
-		BootConfig: hokuchi.BootConfig{
-			Kernel: hokuchi.Kernel{
-				URI: "http://beta.release.flatcar-linux.net/arm64-usr/3760.1.1/flatcar_production_pxe.vmlinuz",
-				Args: []string{
-					"initrd=main",
-					"flatcar.first_boot=1",
-					"console=tty0",
-					"flatcar.autologin=tty0",
-				},
-			},
-			Images: []hokuchi.Image{
-				{
-					Name: "main",
-					URI:  "http://beta.release.flatcar-linux.net/arm64-usr/3760.1.1/flatcar_production_pxe_image.cpio.gz",
-				},
-			},
-		},
+	query := r.URL.Query()
+
+	var attempt int
+	if q := query.Get("attempt"); q != "" {
+		if v, err := strconv.ParseInt(q, 10, 0); err == nil {
+			attempt = int(v)
+		}
 	}
 
-	w.Header().Set("Content-Type", "text/plain")
-	var buf bytes.Buffer
-	if err := ipxeTemplate.Execute(&buf, dummyProfile.BootConfig); err != nil {
-		slog.ErrorContext(ctx, "Error rendering template", slogerr.Err(err))
-		renderIPXEError(w, http.StatusInternalServerError, "")
-		return
+	// retry
+	// Exponential Backoff And Equal Jitter
+	temp := min(backoffCap, backoffBase*int(math.Pow(2, float64(attempt))))
+	sleepMs := temp/2 + rand.Intn(temp/2)
+	slog.Debug("retry", slog.Int("sleep", sleepMs))
+	sleep := sleepMs / 1000
+	if err := renderRetryIPXE(w, r, sleep, attempt+1); err != nil {
+		slog.ErrorContext(ctx, "Error writing retry ipxe response", slogerr.Err(err))
 	}
-	if _, err := buf.WriteTo(w); err != nil {
-		slog.ErrorContext(ctx, "Error writing response", slogerr.Err(err))
-		renderIPXEError(w, http.StatusInternalServerError, "")
-		return
-	}
+	return
 }
 
-func renderIPXEError(w http.ResponseWriter, code int, message string) {
+func renderRetryIPXE(w http.ResponseWriter, r *http.Request, sleep int, nextAttempt int) error {
+	w.Header().Set("Content-Type", "text/plain")
+
+	retryURL := *r.URL
+	query := retryURL.Query()
+	query.Set("attempt", strconv.FormatInt(int64(nextAttempt), 10))
+	retryURL.RawQuery = query.Encode()
+
+	var b bytes.Buffer
+	fmt.Fprintln(&b, "#!ipxe")
+	fmt.Fprintf(&b, "echo Retry after %ds...\n", sleep)
+	fmt.Fprintf(&b, "sleep %d\n", sleep)
+	fmt.Fprintf(&b, "chain --replace %s\n", retryURL.String())
+
+	if _, err := b.WriteTo(w); err != nil {
+		return errtrace.Wrap(err)
+	}
+
+	return nil
+}
+
+func renderIPXEError(w http.ResponseWriter, code int, message string) error {
 	if message == "" {
 		message = http.StatusText(code)
 	}
+	var b bytes.Buffer
+	fmt.Fprintln(&b, "#!ipxe")
+	fmt.Fprintf(&b, "echo %d - %s\n", code, message)
+	fmt.Fprintln(&b, "shell")
+
 	w.Header().Set("Content-Type", "text/plain")
 	w.WriteHeader(code)
-	fmt.Fprintf(w, "#!ipxe\necho %d - %s\nshell\n", code, message)
+
+	if _, err := b.WriteTo(w); err != nil {
+		return errtrace.Wrap(err)
+	}
+	return nil
 }

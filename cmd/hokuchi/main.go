@@ -2,11 +2,9 @@ package main
 
 import (
 	"context"
-	"errors"
 	"flag"
 	"fmt"
 	"log/slog"
-	"net/http"
 	"os"
 	"os/signal"
 	"time"
@@ -53,6 +51,7 @@ func run(args []string) int {
 		}),
 		Storage: storage,
 	}
+	defer server.Close()
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
 	defer stop()
@@ -60,16 +59,9 @@ func run(args []string) int {
 	defer cancel(nil)
 
 	slog.Info(fmt.Sprintf("starting HTTP server on %s", cfg.HttpAddr))
-	hs := &http.Server{
-		Addr:    cfg.HttpAddr,
-		Handler: server.HTTPHandler(),
-	}
-	defer hs.Close()
 	go func() {
-		if err := hs.ListenAndServe(); !errors.Is(err, http.ErrServerClosed) {
-			cancel(errtrace.Wrap(err))
-		}
-		cancel(nil)
+		err := server.Start(cfg.HttpAddr)
+		cancel(errtrace.Wrap(err))
 	}()
 
 	<-ctx.Done()
@@ -80,10 +72,10 @@ func run(args []string) int {
 
 	// graceful shutdown
 	slog.Info("shutting down gracefully")
-	gracefulCtx, stop := context.WithTimeout(context.Background(), 15*time.Second)
+	gracefulCtx, stop := context.WithTimeout(context.Background(), 5*time.Second)
 	defer stop()
-	if err := hs.Shutdown(gracefulCtx); err != nil {
-		slog.Error("failed to shutdown the server", slogerr.Err(err))
+	if err := server.Shutdown(gracefulCtx); err != nil {
+		slog.Error("Error shutting down", slogerr.Err(err))
 		return 1
 	}
 

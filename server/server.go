@@ -1,10 +1,13 @@
 package server
 
 import (
+	"context"
+	"errors"
 	"log/slog"
 	"net/http"
 	"time"
 
+	"braces.dev/errtrace"
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
 	slogchi "github.com/samber/slog-chi"
@@ -45,4 +48,33 @@ func (s *Server) HTTPHandler() http.Handler {
 	r.Get("/flatcar/{channel}/{arch}/{version}/kernel", s.HandleFlatcarKernel)
 
 	return r
+}
+
+func (s *Server) Start(addr string) error {
+	if s.serv != nil {
+		return errtrace.New("server already started")
+	}
+	s.serv = &http.Server{
+		Addr:    addr,
+		Handler: s.HTTPHandler(),
+	}
+	defer func() { s.serv = nil }()
+	if err := s.serv.ListenAndServe(); !errors.Is(err, http.ErrServerClosed) {
+		return errtrace.Wrap(err)
+	}
+	return nil
+}
+
+func (s *Server) Close() error {
+	if s.serv == nil {
+		return errtrace.New("server not started")
+	}
+	return errtrace.Wrap(s.serv.Close())
+}
+
+func (s *Server) Shutdown(ctx context.Context) error {
+	if s.serv == nil {
+		return errtrace.New("server not started")
+	}
+	return errtrace.Wrap(s.serv.Shutdown(ctx))
 }

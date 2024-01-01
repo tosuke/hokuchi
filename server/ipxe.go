@@ -64,8 +64,7 @@ func (s *Server) HandleIPXE(w http.ResponseWriter, r *http.Request) {
 	// Exponential Backoff And Equal Jitter
 	temp := min(backoffCap, backoffBase*int(math.Pow(2, float64(attempt))))
 	sleepMs := temp/2 + rand.Intn(temp/2)
-	slog.Debug("retry", slog.Int("sleep", sleepMs))
-	sleep := sleepMs / 1000
+	sleep := (sleepMs + 500) / 1000
 	if err := renderRetryIPXE(w, r, sleep, attempt+1); err != nil {
 		slog.ErrorContext(ctx, "Error writing retry ipxe response", slogerr.Err(err))
 	}

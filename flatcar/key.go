@@ -11,14 +11,14 @@ type Key struct {
 	version string
 }
 
-func isValidChannel(channel string) bool {
+func IsValidChannel(channel string) bool {
 	switch channel {
 	case "stable", "beta", "alpha":
 		return true
 	}
 	return false
 }
-func isValidArch(arch string) bool {
+func IsValidArch(arch string) bool {
 	switch arch {
 	case "amd64", "arm64":
 		return true
@@ -28,7 +28,10 @@ func isValidArch(arch string) bool {
 
 var versionRegex = regexp.MustCompile("^\\d+\\.\\d+\\.\\d+$")
 
-func isValidVersion(version string) bool {
+func IsValidVersion(version string) bool {
+	if version == "current" {
+		return true
+	}
 	return versionRegex.MatchString(version)
 }
 

@@ -49,10 +49,10 @@ func (f *Fetcher) ResolveKey(ctx context.Context, channel, arch, version string)
 		version: version,
 	}
 
-	if !isValidChannel(k.channel) {
+	if !IsValidChannel(k.channel) {
 		return Key{}, errtrace.New("invalid channel")
 	}
-	if !isValidArch(k.arch) {
+	if !IsValidArch(k.arch) {
 		return Key{}, errtrace.New("invalid arch")
 	}
 	if k.version == "current" {
@@ -62,7 +62,7 @@ func (f *Fetcher) ResolveKey(ctx context.Context, channel, arch, version string)
 		}
 		k.version = currentVer
 	}
-	if !isValidVersion(k.version) {
+	if !IsValidVersion(k.version) {
 		return Key{}, errtrace.New("invalid version")
 	}
 

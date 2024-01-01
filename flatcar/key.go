@@ -42,5 +42,12 @@ func (k Key) baseURL() string {
 	return fmt.Sprintf("https://%s.release.flatcar-linux.net/%s-usr/%s", k.channel, k.arch, k.version)
 }
 func (k Key) valid() bool {
-	return isValidChannel(k.channel) && isValidArch(k.arch) && isValidVersion(k.version)
+	return IsValidChannel(k.channel) && IsValidArch(k.arch) && IsValidVersion(k.version)
+}
+
+func (k Key) KernelKey() string {
+	return k.String() + "-kernel"
+}
+func (k Key) InitrdKey() string {
+	return k.String() + "-initrd"
 }

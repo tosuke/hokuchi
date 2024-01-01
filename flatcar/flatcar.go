@@ -22,6 +22,7 @@ type Fetcher struct {
 }
 type Option struct {
 	RequestConcurrency int
+	HTTP *http.Client
 }
 
 func New(option Option) *Fetcher {
@@ -30,8 +31,13 @@ func New(option Option) *Fetcher {
 		sema = make(chan struct{}, option.RequestConcurrency)
 	}
 
+	hc := http.DefaultClient
+	if option.HTTP != nil {
+		hc = option.HTTP
+	}
+
 	return &Fetcher{
-		http: http.DefaultClient,
+		http: hc,
 		sema: sema,
 	}
 }

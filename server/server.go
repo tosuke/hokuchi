@@ -41,11 +41,9 @@ func (s *Server) HTTPHandler() http.Handler {
 	r.HandleFunc("/boot_{arch}.efi", s.HandleBootbin)
 	r.Get("/boot.ipxe", s.HandleBootstrapIPXE)
 	r.Get("/ipxe", s.HandleIPXE)
-	// r.Get("/profile/{pid}/flatcar/kernel")
-	// r.Get("/profile/{pid}/flatcar/initrd")
+	r.Get("/profile/{pid}/flatcar/kernel", s.HandleFlatcarKernel)
+	r.Get("/profile/{pid}/flatcar/initrd", s.HandleFlatcarInitrd)
 	// r.Get("/profile/{pid}/ignition")
-	// TODO やめる
-	r.Get("/flatcar/{channel}/{arch}/{version}/kernel", s.HandleFlatcarKernel)
 
 	return r
 }

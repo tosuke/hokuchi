@@ -1,35 +1,53 @@
 package server
 
 import (
-	"bytes"
 	"errors"
+	"fmt"
 	"io"
 	"log/slog"
 	"net/http"
 	"strconv"
-	"time"
 
-	"github.com/go-chi/chi/v5"
 	"github.com/tosuke/hokuchi/slogerr"
 	"github.com/tosuke/hokuchi/storage"
 )
 
 func (s *Server) HandleFlatcarKernel(w http.ResponseWriter, r *http.Request) {
-	channel := chi.URLParam(r, "channel")
-	arch := chi.URLParam(r, "arch")
-	version := chi.URLParam(r, "version")
-
 	ctx := r.Context()
-	w.Header().Set("Content-Type", "application/octet-stream")
+	profile := defaultProfile
 
-	key, err := s.Flatcar.ResolveKey(ctx, channel, arch, version)
+	fc := profile.Boot.Flatcar
+	if fc == nil {
+		http.Error(w, "profile does not use flatcar", http.StatusBadRequest)
+		return
+	}
+
+	key, err := s.Flatcar.ResolveKey(ctx, fc.Channel, profile.Arch, fc.Version)
 	if err != nil {
-		slog.ErrorContext(ctx, "failed to resolve key", slogerr.Err(err))
+		slog.ErrorContext(ctx, "Error resolving flatcar version", slogerr.Err(err))
 		w.WriteHeader(http.StatusInternalServerError)
 		return
 	}
 
-	size, reader, err := s.Storage.Get(ctx, key.String())
+	size, reader, err := s.Storage.Get(ctx, key.KernelKey())
+	if err != nil {
+		if errors.Is(err, storage.ErrNotfound) {
+			http.Error(w, fmt.Sprintf("flatcar kernel %s not found", key.String()), http.StatusNotFound)
+			return
+		}
+		slog.ErrorContext(ctx, "Error getting kernel from storage", slogerr.Err(err))
+		status := http.StatusInternalServerError
+		http.Error(w, http.StatusText(status), status)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/octet-stream")
+	w.Header().Set("Content-Length", strconv.FormatInt(size, 10))
+	w.Header().Set("Content-Disposition", "kernel")
+	if _, err := io.Copy(w, reader); err != nil {
+		slog.ErrorContext(ctx, "Error writing kernel response", slogerr.Err(err))
+		return
+	}
 	if err == nil {
 		w.Header().Set("Content-Length", strconv.FormatInt(size, 10))
 		io.Copy(w, reader)
@@ -39,27 +57,42 @@ func (s *Server) HandleFlatcarKernel(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusInternalServerError)
 		return
 	}
+}
 
-	tx, err := s.Storage.Add(ctx, key.String())
-	if err != nil {
-		slog.ErrorContext(ctx, "Error creating kernel writer", slogerr.Err(err))
-		w.WriteHeader(http.StatusInternalServerError)
+func (s *Server) HandleFlatcarInitrd(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+
+	profile := defaultProfile
+	fc := profile.Boot.Flatcar
+	if fc == nil {
+		http.Error(w, "profile does not use flatcar", http.StatusBadRequest)
 		return
 	}
-	defer tx.Rollback()
 
-	var buf bytes.Buffer
-	writer := io.MultiWriter(&buf, tx)
-	if err := s.Flatcar.FetchKernel(ctx, writer, key); err != nil {
-		slog.ErrorContext(ctx, "failed to fetch kernel", slogerr.Err(err))
+	key, err := s.Flatcar.ResolveKey(ctx, fc.Channel, profile.Arch, fc.Version)
+	if err != nil {
+		slog.ErrorContext(ctx, "Error resolving flatcar version", slogerr.Err(err))
+		status := http.StatusInternalServerError
+		http.Error(w, http.StatusText(status), status)
+		return
 	}
 
-	if err := tx.Commit(ctx); err != nil {
-		slog.ErrorContext(ctx, "failed to commit kernel data: %w", err)
-		w.WriteHeader(http.StatusInternalServerError)
+	size, reader, err := s.Storage.Get(ctx, key.InitrdKey())
+	if err != nil {
+		if errors.Is(err, storage.ErrNotfound) {
+			http.Error(w, fmt.Sprintf("flatcar initrd %s not found", key.String()), http.StatusNotFound)
+			return
+		}
+		slog.ErrorContext(ctx, "Error getting initrd from storage", slogerr.Err(err))
+		http.Error(w, "Internal Error from storage", http.StatusInternalServerError)
 		return
 	}
 
 	w.Header().Set("Content-Type", "application/octet-stream")
-	http.ServeContent(w, r, "kernel", time.Now(), bytes.NewReader(buf.Bytes()))
+	w.Header().Set("Content-Length", strconv.FormatInt(size, 10))
+	w.Header().Set("Content-Disposition", "initrd")
+	if _, err := io.Copy(w, reader); err != nil {
+		slog.ErrorContext(ctx, "Error writing initrd response", slogerr.Err(err))
+		return
+	}
 }

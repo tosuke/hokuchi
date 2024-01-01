@@ -11,6 +11,7 @@ import (
 	"text/template"
 
 	"braces.dev/errtrace"
+	"github.com/tosuke/hokuchi/profile"
 	"github.com/tosuke/hokuchi/slogerr"
 )
 
@@ -28,6 +29,21 @@ boot`))
 func (s *Server) HandleBootstrapIPXE(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "text/plain")
 	w.Write([]byte(bootstrapIpxe))
+}
+
+var defaultProfile = profile.Profile{
+	ID: "default",
+	Arch: "arm64",
+	Boot: profile.Boot{
+		Flatcar: &profile.Flatcar{
+			Channel: "beta",
+			Version: "current",
+			Args: []string{
+				"flatcar.firstboot=1",
+				"sshkey=\"ecdsa-sha2-nistp384 AAAAE2VjZHNhLXNoYTItbmlzdHAzODQAAAAIbmlzdHAzODQAAABhBBW8gye009QtUJvF6by0Cmx91y0jRA5h0FGzurmazR6w9MSW702YFM/cXgsf3Au4y6kzRmUSpUDdm7QhRYM4yDsljmoyLZ2qz807sCakOaFhXmYrFeqbgQy2RveSeVT94A== tosuke\"",
+			},
+		},
+	},
 }
 
 const backoffBase = 10_000

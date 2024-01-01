@@ -32,7 +32,7 @@ type config struct {
 }
 
 func initConfig() config {
-	httpAddr := os.Getenv("HOKUCHI_HTTP_ADDR")
+	httpAddr := os.Getenv("HOKUCHI_HTTP_ADDRESS")
 	if httpAddr == "" {
 		httpAddr = flagHttpAddr
 	}
